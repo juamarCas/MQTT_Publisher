@@ -1,7 +1,18 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include "Secrets.h"
+
+#if CONFIG_FREERTOS_UNICORE
+static const BaseType_t app_cpu = 0;
+#else 
+static const BaseType_t app_cpu = 1;
+#endif
+
+static const std::uint8_t queue_length = 10;
+
+static QueueHandle_t data_queue;
 
 const char * ssid     = Secrets::ssid;
 const char * password = Secrets::pass;
@@ -21,58 +32,78 @@ void callback(char *topic, byte *payload, unsigned int lenght);
 void ConnectToWiFi();
 void reconnect();
 
+StaticJsonDocument<96> doc;
+std::string jsonOut;
+
 #pragma pack(1)
 typedef struct Payloads {
-    std::uint16_t moist_1;
-    std::uint16_t moist_2;
-    float         temp;
-    float         hum;
-}Payload, * PPayload;
+    std::uint8_t moist;
+    float env_temp;
+    float env_hum;
+    std::uint16_t soil_temp;
+    std::uint8_t light;
+}Payload;
 #pragma pack()
+TaskHandle_t task1;
 
-std::uint8_t * buffer;
+char buff[sizeof(Payload)];
+Payload * _pl;
 
 
 void ReadSerial(void * parameter){
   while (1)
-  {
-    if(Serial2.available() > 0){
-      Serial.readBytes(buffer,sizeof(Payloads));
-      std::uint8_t  * p = &buffer[0];
-      for(int i = 0; i < sizeof(Payloads); i++){
-        Serial.println(*p);
-        p++;
+  {    
+    if(Serial.available() > 0){
+          
+      Serial.readBytes(buff, sizeof(Payload));
+      if(xQueueSend(data_queue, &buff, 10) != pdTRUE){
+        Serial.println("Error message!");
       }
-      
     }
-  }
   
+  }
 }
 
 void setup() {
+  data_queue = xQueueCreate(queue_length, sizeof(buff));
   Serial.begin(9600);
   Serial.println("hello");
-  Serial2.begin(9600, SERIAL_8N1, RX2, TX2);
 
-  xTaskCreate(
+
+  xTaskCreatePinnedToCore(
     ReadSerial,
     "Serial_task",
-    1000,
+    1024,
     NULL,
     1,
-    NULL);
+    NULL,
+    app_cpu);
 
-  
   ConnectToWiFi();
   mqtt_client.setServer(mqtt_host, mqtt_port);
   mqtt_client.setCallback(callback);
+
 }
 
 
 void loop() {
-
+  char local_buff[sizeof(buff)];
   if(!mqtt_client.connected()){
     reconnect();
+  }
+
+  if(xQueueReceive(data_queue, &local_buff, 0) == pdTRUE){ 
+      _pl = (Payload *)(local_buff);
+      doc["id"] = 1;
+      doc["moist"] = _pl->moist;
+      doc["light"] = _pl->light;
+      doc["envTemp"] = _pl->env_temp;
+      doc["envHum"] = _pl->env_hum;
+      doc["soilTemp"] = _pl->soil_temp;
+      jsonOut = "";
+      serializeJson(doc, jsonOut);
+      Serial.println(jsonOut.c_str());
+      mqtt_client.publish("test", jsonOut.c_str());
   }
 
   mqtt_client.loop();
@@ -83,7 +114,8 @@ void reconnect(){
     if(mqtt_client.connect(client_id.c_str())){
       mqtt_client.publish("test", "Hello from ESP32!");
     }else{
-      delay(500);
+      vTaskDelay(1000/portTICK_PERIOD_MS);
+
     }
   }
 }
@@ -92,7 +124,7 @@ void ConnectToWiFi(){
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
+    vTaskDelay(500/portTICK_PERIOD_MS);
   }
   
 }
