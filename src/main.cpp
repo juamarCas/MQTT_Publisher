@@ -49,15 +49,15 @@ TaskHandle_t task1;
 char buff[sizeof(Payload)];
 Payload * _pl;
 
-
+    
 void ReadSerial(void * parameter){
   while (1)
   {    
-    if(Serial.available() > 0){
+    if(Serial2.available() > 0){
           
-      Serial.readBytes(buff, sizeof(Payload));
+      Serial2.readBytes(buff, sizeof(Payload));
       if(xQueueSend(data_queue, &buff, 10) != pdTRUE){
-        Serial.println("Error message!");
+        
       }
     }
   
@@ -68,6 +68,7 @@ void setup() {
   data_queue = xQueueCreate(queue_length, sizeof(buff));
   Serial.begin(9600);
   Serial.println("hello");
+  Serial2.begin(9600);
 
 
   xTaskCreatePinnedToCore(
@@ -99,7 +100,7 @@ void loop() {
       doc["light"] = _pl->light;
       doc["envTemp"] = _pl->env_temp;
       doc["envHum"] = _pl->env_hum;
-      doc["soilTemp"] = _pl->soil_temp;
+      doc["soilTemp"] = 0;
       jsonOut = "";
       serializeJson(doc, jsonOut);
       Serial.println(jsonOut.c_str());
