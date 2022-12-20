@@ -37,6 +37,7 @@ std::string jsonOut;
 
 #pragma pack(1)
 typedef struct Payloads {
+    std::uint16_t id;
     std::uint8_t moist;
     float env_temp;
     float env_hum;
@@ -113,7 +114,7 @@ void loop() {
 void reconnect(){
   while(!mqtt_client.connected()){
     if(mqtt_client.connect(client_id.c_str())){
-      mqtt_client.publish("test", "Hello from ESP32!");
+      
     }else{
       vTaskDelay(1000/portTICK_PERIOD_MS);
 
