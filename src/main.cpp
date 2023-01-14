@@ -3,6 +3,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include "Secrets.h"
+#include <WiFiManager.h>
+
+#define DEBUG 1
 
 #if CONFIG_FREERTOS_UNICORE
 static const BaseType_t app_cpu = 0;
@@ -21,6 +24,7 @@ const char * mqtt_host = Secrets::mqtt_host;
 const int mqtt_port    = Secrets::mqtt_port;
 
 String client_id = "esp_client";
+const char * topic = "garden";
 
 WiFiClient client;
 PubSubClient mqtt_client(client); 
@@ -71,6 +75,26 @@ void setup() {
   Serial.println("hello");
   Serial2.begin(9600);
 
+  WiFi.mode(WIFI_STA);
+  WiFiManager wm;
+
+  #if DEBUG
+  wm.resetSettings();
+  #endif 
+  
+  bool res;
+  res = wm.autoConnect("AutoConnectAP", "password");
+
+  #if DEBUG
+  Serial.println("WOOP!");
+  //wipe credentials
+  //comment on production 
+  if(res){
+    Serial.println("Connected!");
+  }
+
+  #endif
+
 
   xTaskCreatePinnedToCore(
     ReadSerial,
@@ -81,9 +105,12 @@ void setup() {
     NULL,
     app_cpu);
 
-  ConnectToWiFi();
+  //ConnectToWiFi();
   mqtt_client.setServer(mqtt_host, mqtt_port);
   mqtt_client.setCallback(callback);
+
+
+ 
 
 }
 
@@ -105,7 +132,7 @@ void loop() {
       jsonOut = "";
       serializeJson(doc, jsonOut);
       Serial.println(jsonOut.c_str());
-      mqtt_client.publish("test", jsonOut.c_str());
+      mqtt_client.publish(topic, jsonOut.c_str());
   }
 
   mqtt_client.loop();
